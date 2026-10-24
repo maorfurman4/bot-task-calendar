@@ -150,6 +150,39 @@ def replace_week(ws: date, events: list) -> None:
             "extendedProperties": {"private": {**TAG, "shift": ev["shift"], "position": ev["position"]}},
         }).execute()
 
+# ── קיצורי טקסט: "ראשון שלישי וחמישי משמרת צהריים" ───────────────────────────
+
+SHIFT_WORDS = {"בוקר": "בוקר", "צהריים": "צהריים", "צהרים": "צהריים", "לילה": "לילה"}
+DAY_RE = re.compile(r"^(?:ו?ב?|ב?ו?)(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)$")
+
+def parse_shortcut(text: str, today: date) -> list:
+    """רק הודעה עם "משמרת"; כל פסקה (מופרדת בפסיק/נקודה/שורה): ימים + סוג משמרת + רמ"ש/12 אופציונלי."""
+    if "משמר" not in text:
+        return []
+    ws = week_start(today)
+    if "שבוע הבא" in text or ("השבוע" not in text and today != ws):
+        ws += timedelta(days=7)  # ברירת מחדל: סידור לשבוע הבא, אלא אם היום ראשון
+    events = []
+    for clause in re.split(r"[,.\n;]", text):
+        flat = re.sub(r"[\"״׳']", "", clause)
+        position = 'רמ"ש' if "רמש" in flat else "רגילה"
+        twelve = bool(re.search(r"(?<!\d)12(?!\d)", clause))
+        days, shift, pairs = [], None, []
+        for word in re.findall(r"[\w\"״׳']+", clause):
+            day = DAY_RE.match(word.strip("\"'"))
+            if day:
+                days.append(DAYS_HE.index(day.group(1)))
+            elif (sw := word if word in SHIFT_WORDS else word[1:] if word[:1] == "ב" else "") in SHIFT_WORDS:
+                shift = SHIFT_WORDS[sw]  # "בוקר" עצמו מתחיל ב-ב, לכן לא lstrip
+                pairs += [(d, shift) for d in days]
+                days = []
+        pairs += [(d, shift) for d in days if shift]  # "משמרת צהריים בשני" — הסוג לפני הימים
+        for weekday, sh in pairs:
+            day = ws + timedelta(days=(weekday + 1) % 7)  # weekday 0=שני → ראשון הוא 0 בשבוע
+            start, end = shift_hours(position, sh, twelve)
+            events.append(make_event(day, sh, start, end, position))
+    return sorted(events, key=lambda e: e["start"])
+
 # ── זרימה ─────────────────────────────────────────────────────────────────────
 
 def to_events(found: list) -> list:
@@ -171,8 +204,18 @@ def handle_image(image: bytes) -> None:
         return
     events = to_events(result.get("shifts", []))
     if not events:
-        send("🤷 לא מצאתי את השם שלך (מאור פורמן) בסידור.")
+        send("🤷 לא הצלחתי לקרוא את השם שלך (מאור פורמן) בתמונה.\n"
+             "אפשר לכתוב לי במקום, למשל: <b>משמרת צהריים בראשון שלישי וחמישי</b>")
         return
+    ask_approval(events)
+
+def handle_shortcut(text: str) -> bool:
+    events = parse_shortcut(text, datetime.now(IL_TZ).date())
+    if events:
+        ask_approval(events)
+    return bool(events)
+
+def ask_approval(events: list) -> None:
     ws = week_start(events[0]["start"].date())
     text = preview_text(events, ws, diff(existing_shifts(ws), events), conflicts(events))
     send(text, [{"text": "✅ אשר והכנס ליומן", "callback_data": f"shifts:{ws.isoformat()}"},

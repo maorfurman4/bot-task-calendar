@@ -11,7 +11,9 @@ import _shifts  # noqa: E402
 
 HELP = ("👋 אני יוסי.\n"
         "• כתוב לי משימה או אירוע, למשל: \"לקנות חלב, אימון מחר ב-6\"\n"
-        "• שלח תמונה של סידור עבודה — אמצא את המשמרות שלך ואכניס ליומן אחרי אישור")
+        "• שלח תמונה של סידור עבודה (עדיף כקובץ) — אמצא את המשמרות שלך ואכניס ליומן אחרי אישור\n"
+        "• או כתוב משמרות בקיצור: \"משמרת צהריים בראשון שלישי וחמישי, שבת לילה רמש\"\n"
+        "  (ברירת מחדל: השבוע הבא; אפשר לכתוב \"השבוע\". 12 = משמרת 12 שעות)")
 
 def is_image(doc: dict) -> bool:
     # טלגרם במק שולח קובץ JPG עם mime_type "application/binary", לכן גם לפי הסיומת
@@ -43,7 +45,10 @@ def dispatch(update: dict) -> None:
     elif is_image(doc):  # תמונה שנשלחה כקובץ — באיכות מלאה
         _shifts.handle_image(_core.download(doc["file_id"]))
     elif text := message.get("text", ""):
-        _core.send(HELP) if text.startswith("/") else _core.handle_text(text)
+        if text.startswith("/"):
+            _core.send(HELP)
+        elif not _shifts.handle_shortcut(text):  # "משמרת צהריים בראשון..." → משמרות; אחרת משימה/אירוע
+            _core.handle_text(text)
 
 def app(environ, start_response):
     """WSGI — מה ש-Vercel מריץ (pyproject.toml → entrypoint)."""
