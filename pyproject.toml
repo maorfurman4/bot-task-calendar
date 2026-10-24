@@ -1,0 +1,12 @@
+[project]
+name = "yossi-bot"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "requests>=2.31",
+    "google-api-python-client",
+    "google-auth",
+]
+
+[tool.vercel]
+entrypoint = "api.webhook:app"

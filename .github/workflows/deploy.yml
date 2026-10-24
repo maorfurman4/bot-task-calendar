@@ -1,0 +1,46 @@
+name: Deploy Yossi to Vercel
+
+# מעתיק את הסודות מ-GitHub ל-Vercel, מעלה גרסה ומחבר את טלגרם ל-webhook.
+# להריץ ידנית (Actions → Run workflow) — פעם אחת, ושוב רק אם סוד השתנה.
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERCEL_ORG_ID: team_PY1KdjbsQ6zgSh4YmHEwiIXx
+      VERCEL_PROJECT_ID: prj_4LIfj5WDd8shJXaRApiP1FqUTOja
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      CHAT_ID: ${{ secrets.CHAT_ID }}
+      OPEN_API_KEY: ${{ secrets.OPEN_API_KEY }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_TASKS_CREDENTIALS: ${{ secrets.GOOGLE_TASKS_CREDENTIALS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+
+      - name: Copy secrets to Vercel
+        run: |
+          for name in TELEGRAM_TOKEN CHAT_ID OPEN_API_KEY GOOGLE_SERVICE_ACCOUNT_JSON GOOGLE_TASKS_CREDENTIALS; do
+            vercel env rm "$name" production --yes --token "$VERCEL_TOKEN" >/dev/null 2>&1 || true
+            printf '%s' "${!name}" | vercel env add "$name" production --token "$VERCEL_TOKEN"
+          done
+
+      - name: Deploy
+        run: vercel deploy --prod --yes --token "$VERCEL_TOKEN"
+
+      - name: Point Telegram to Vercel
+        run: |
+          TOKEN=$(printf '%s' "$TELEGRAM_TOKEN" | tr -d '[:space:]')
+          SECRET=$(printf '%s' "$TOKEN" | sha256sum | cut -c1-32)  # אותו חישוב כמו webhook_secret()
+          curl -sf "https://api.telegram.org/bot$TOKEN/setWebhook" \
+            -d url=https://yossi-bot.vercel.app/api/webhook \
+            -d secret_token="$SECRET" \
+            --data-urlencode 'allowed_updates=["message","callback_query"]' | grep -q '"ok":true'
+          curl -s "https://api.telegram.org/bot$TOKEN/getWebhookInfo" \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin)["result"]; print("webhook:", r["url"], "| pending:", r["pending_update_count"], "| last error:", r.get("last_error_message", "-"))'
