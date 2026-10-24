@@ -33,9 +33,7 @@ jobs:
           echo "VERCEL_TOKEN=$CLEAN" >> "$GITHUB_ENV"
 
       - name: Link project
-        run: |
-          vercel whoami --token "$VERCEL_TOKEN"
-          vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+        run: vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
 
       - name: Copy secrets to Vercel
         run: |
