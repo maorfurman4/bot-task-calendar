@@ -24,6 +24,11 @@ jobs:
       - name: Install Vercel CLI
         run: npm i -g vercel@latest
 
+      - name: Link project
+        run: |
+          vercel whoami --token "$VERCEL_TOKEN"
+          vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+
       - name: Copy secrets to Vercel
         run: |
           for name in TELEGRAM_TOKEN CHAT_ID OPEN_API_KEY GOOGLE_SERVICE_ACCOUNT_JSON GOOGLE_TASKS_CREDENTIALS; do
