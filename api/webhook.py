@@ -30,6 +30,9 @@ def dispatch(update: dict) -> None:
     if str(message.get("chat", {}).get("id")) != _core.CHAT_ID:
         return  # רק מאור
     doc = message.get("document") or {}
+    _core.logger.info("message keys=%s photo_sizes=%s doc=%s", sorted(message),
+                      [(p.get("width"), p.get("height")) for p in message.get("photo", [])],
+                      {k: doc.get(k) for k in ("mime_type", "file_name", "file_size")})
     if message.get("photo"):
         _shifts.handle_image(_core.download(message["photo"][-1]["file_id"]))
     elif doc.get("mime_type", "").startswith("image/"):  # תמונה שנשלחה כקובץ — באיכות מלאה

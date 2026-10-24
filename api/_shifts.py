@@ -3,10 +3,11 @@
 ה-AI רק מאתר את התאים עם השם; את השעות מחשב הקוד לפי הכללים.
 """
 
+import json
 import re
 from datetime import date, datetime, timedelta
 
-from _core import CALENDAR_ID, IL_TZ, ask_ai, calendar, edit, esc, send
+from _core import CALENDAR_ID, IL_TZ, ask_ai, calendar, edit, esc, logger, send
 
 DAYS_HE = ["שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "ראשון"]
 TAG = {"yossi": "shift"}  # מסמן משמרות שיוסי הכניס, כדי להחליף אותן כששולחים סידור מתוקן
@@ -164,6 +165,7 @@ def to_events(found: list) -> list:
 def handle_image(image: bytes) -> None:
     send("🔍 קורא את הסידור...")
     result = ask_ai(VISION_PROMPT, image)
+    logger.info("vision: %d bytes → %s", len(image), json.dumps(result, ensure_ascii=False))
     if not result.get("is_schedule"):
         send("🤷 זה לא נראה כמו סידור עבודה. כרגע אני יודע לקרוא מתמונות רק סידורי עבודה.")
         return
