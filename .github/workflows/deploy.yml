@@ -36,11 +36,18 @@ jobs:
         run: vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
 
       - name: Copy secrets to Vercel
+        # דרך ה-API ולא `vercel env add` — ה-CLI נכשל שם, וככה גם JSON עם מרכאות עובר בשלמותו
+        shell: python
         run: |
-          for name in TELEGRAM_TOKEN CHAT_ID OPEN_API_KEY GOOGLE_SERVICE_ACCOUNT_JSON GOOGLE_TASKS_CREDENTIALS; do
-            vercel env rm "$name" production --yes --token "$VERCEL_TOKEN" >/dev/null 2>&1 || true
-            printf '%s' "${!name}" | vercel env add "$name" production --token "$VERCEL_TOKEN"
-          done
+          import json, os, urllib.request
+          url = (f"https://api.vercel.com/v10/projects/{os.environ['VERCEL_PROJECT_ID']}/env"
+                 f"?upsert=true&teamId={os.environ['VERCEL_ORG_ID']}")
+          for name in ["TELEGRAM_TOKEN", "CHAT_ID", "OPEN_API_KEY", "GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_TASKS_CREDENTIALS"]:
+              body = {"key": name, "value": os.environ[name], "type": "encrypted", "target": ["production"]}
+              req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST", headers={
+                  "Authorization": f"Bearer {os.environ['VERCEL_TOKEN']}", "Content-Type": "application/json"})
+              with urllib.request.urlopen(req) as resp:
+                  print(name, resp.status)
 
       - name: Deploy
         run: vercel deploy --prod --yes --token "$VERCEL_TOKEN"
