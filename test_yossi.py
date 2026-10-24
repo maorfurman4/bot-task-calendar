@@ -48,4 +48,10 @@ assert s.diff(events, events) == ["✔️ זהה לסידור שכבר ביומ�
 changed = s.diff(events[:2], events[1:])
 assert len(changed) == 2 and changed[0].startswith("➕ נוסף: חמישי") and changed[1].startswith("➖ בוטל: ראשון")
 
+# קובץ תמונה מזוהה גם כשטלגרם שולח mime_type כללי (כך זה הגיע מהמק)
+import webhook  # noqa: E402
+assert webhook.is_image({"mime_type": "application/binary", "file_name": "5a21.JPG"})
+assert webhook.is_image({"mime_type": "image/png", "file_name": "x"})
+assert not webhook.is_image({"mime_type": "application/pdf", "file_name": "a.pdf"})
+
 print("ok")

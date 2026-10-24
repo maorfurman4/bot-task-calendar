@@ -13,6 +13,11 @@ HELP = ("👋 אני יוסי.\n"
         "• כתוב לי משימה או אירוע, למשל: \"לקנות חלב, אימון מחר ב-6\"\n"
         "• שלח תמונה של סידור עבודה — אמצא את המשמרות שלך ואכניס ליומן אחרי אישור")
 
+def is_image(doc: dict) -> bool:
+    # טלגרם במק שולח קובץ JPG עם mime_type "application/binary", לכן גם לפי הסיומת
+    name = (doc.get("file_name") or "").lower()
+    return (doc.get("mime_type") or "").startswith("image/") or name.endswith((".jpg", ".jpeg", ".png", ".webp"))
+
 def dispatch(update: dict) -> None:
     if cq := update.get("callback_query"):
         message = cq.get("message", {})
@@ -35,7 +40,7 @@ def dispatch(update: dict) -> None:
                       {k: doc.get(k) for k in ("mime_type", "file_name", "file_size")})
     if message.get("photo"):
         _shifts.handle_image(_core.download(message["photo"][-1]["file_id"]))
-    elif doc.get("mime_type", "").startswith("image/"):  # תמונה שנשלחה כקובץ — באיכות מלאה
+    elif is_image(doc):  # תמונה שנשלחה כקובץ — באיכות מלאה
         _shifts.handle_image(_core.download(doc["file_id"]))
     elif text := message.get("text", ""):
         _core.send(HELP) if text.startswith("/") else _core.handle_text(text)
