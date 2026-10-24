@@ -56,9 +56,13 @@ jobs:
         run: |
           TOKEN=$(printf '%s' "$TELEGRAM_TOKEN" | tr -d '[:space:]')
           SECRET=$(printf '%s' "$TOKEN" | sha256sum | cut -c1-32)  # אותו חישוב כמו webhook_secret()
+          info() {
+            curl -s "https://api.telegram.org/bot$TOKEN/getWebhookInfo" \
+              | python3 -c 'import json,sys; r=json.load(sys.stdin)["result"]; print("webhook:", r.get("url") or "-", "| pending:", r["pending_update_count"], "| last error:", r.get("last_error_message", "-"), "| at:", r.get("last_error_date", "-"))'
+          }
+          echo "before:" && info
           curl -sf "https://api.telegram.org/bot$TOKEN/setWebhook" \
             -d url=https://yossi-bot.vercel.app/api/webhook \
             -d secret_token="$SECRET" \
             --data-urlencode 'allowed_updates=["message","callback_query"]' | grep -q '"ok":true'
-          curl -s "https://api.telegram.org/bot$TOKEN/getWebhookInfo" \
-            | python3 -c 'import json,sys; r=json.load(sys.stdin)["result"]; print("webhook:", r["url"], "| pending:", r["pending_update_count"], "| last error:", r.get("last_error_message", "-"))'
+          echo "after:" && info
