@@ -10,7 +10,8 @@ import _core  # noqa: E402
 import _shifts  # noqa: E402
 
 HELP = ("👋 אני יוסי.\n"
-        "• כתוב לי משימה או אירוע, למשל: \"לקנות חלב, אימון מחר ב-6\"\n"
+        "• כתוב או הקלט לי משימה או אירוע, למשל: \"לקנות חלב, אימון מחר ב-6\"\n"
+        "• שלח צילום מסך של הזמנה, תור או כרטיס — אציג מה מצאתי ואוסיף אחרי אישור\n"
         "• שלח תמונה של סידור עבודה (עדיף כקובץ) — אמצא את המשמרות שלך ואכניס ליומן אחרי אישור\n"
         "• או כתוב משמרות בקיצור: \"משמרת צהריים בראשון שלישי וחמישי, שבת לילה רמש\"\n"
         "  (ברירת מחדל: השבוע הבא; אפשר לכתוב \"השבוע\". 12 = משמרת 12 שעות)")
@@ -29,6 +30,11 @@ def dispatch(update: dict) -> None:
         data = cq.get("data", "")
         if data.startswith("shifts:"):
             _shifts.approve(message, data.split(":", 1)[1])
+        elif data == "items":
+            _shifts.approve_items(message)
+        elif data.startswith("undo:"):
+            removed = _core.undo(data.split(":", 1)[1])
+            _core.edit(message["message_id"], f"↩️ בוטל — הוסרו {removed} פריטים מהיומן ומהמשימות.")
         elif data == "cancel":
             _core.edit(message["message_id"], "❌ בוטל — לא הוכנס כלום ליומן.")
         return
@@ -44,11 +50,17 @@ def dispatch(update: dict) -> None:
         _shifts.handle_image(_core.download(message["photo"][-1]["file_id"]))
     elif is_image(doc):  # תמונה שנשלחה כקובץ — באיכות מלאה
         _shifts.handle_image(_core.download(doc["file_id"]))
+    elif voice := message.get("voice") or message.get("audio"):
+        text = _core.transcribe(_core.download(voice["file_id"]))
+        _core.send(f"🎙️ שמעתי: <i>{_core.esc(text)}</i>" if text else "🤷 לא הצלחתי לשמוע מה נאמר בהקלטה.")
+        if text:
+            route_text(text)
     elif text := message.get("text", ""):
-        if text.startswith("/"):
-            _core.send(HELP)
-        elif not _shifts.handle_shortcut(text):  # "משמרת צהריים בראשון..." → משמרות; אחרת משימה/אירוע
-            _core.handle_text(text)
+        _core.send(HELP) if text.startswith("/") else route_text(text)
+
+def route_text(text: str) -> None:
+    if not _shifts.handle_shortcut(text):  # "משמרת צהריים בראשון..." → משמרות; אחרת משימה/אירוע
+        _core.handle_text(text)
 
 def app(environ, start_response):
     """WSGI — מה ש-Vercel מריץ (pyproject.toml → entrypoint)."""

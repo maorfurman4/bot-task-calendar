@@ -69,6 +69,29 @@ assert short("משמרת בוקר 12 בשבת") == ["🛡️ שבת 07/11 · ב�
 assert short("משמרת בראשון", date(2026, 11, 1)) == []  # בלי סוג משמרת — לא קיצור
 assert short("אימון בבוקר ביום שלישי") == []  # בלי "משמרת" — משימה רגילה
 
+# צילום מסך → אירועים ומשימות: הטקסט של התצוגה המקדימה הוא גם המקור לאישור
+import _core as c  # noqa: E402
+items = [
+    {"type": "event", "title": "רופא שיניים — מרפאת הדר", "date": "02/11/2026", "start_time": "08:00", "end_time": None},
+    {"type": "task", "title": "לקנות חלב", "date": "01/11/2026"},
+]
+preview = "\n".join(c.item_line(i) for i in items)
+assert preview.splitlines() == [
+    "📅 שני 02/11/2026 · 08:00–09:00 · רופא שיניים — מרפאת הדר",
+    "📌 ראשון 01/11/2026 · לקנות חלב",
+]
+back = c.parse_items("📸 מצאתי בתמונה:\n" + preview + "\nשורה אחרת")
+assert back == [
+    {"type": "event", "title": "רופא שיניים — מרפאת הדר", "date": "02/11/2026", "start_time": "08:00", "end_time": "09:00"},
+    {"type": "task", "title": "לקנות חלב", "date": "01/11/2026", "start_time": None, "end_time": None},
+]
+assert c.item_line({"type": "event", "title": "x", "date": "bad"}) == ""  # תאריך לא תקין — לא מוצג
+
+# ביטול: כל פעולה מסומנת במזהה קצר שנכנס לכפתור
+b = c.new_batch()
+assert len(f"undo:{b}".encode()) <= 64 and c.is_marked({"notes": f"נוסף ע\"י יוסי · {c.marker(b)}"}, b)
+assert not c.is_marked({"notes": "x"}, b) and not c.is_marked({}, b)
+
 # קובץ תמונה מזוהה גם כשטלגרם שולח mime_type כללי (כך זה הגיע מהמק)
 import webhook  # noqa: E402
 assert webhook.is_image({"mime_type": "application/binary", "file_name": "5a21.JPG"})

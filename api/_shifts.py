@@ -7,18 +7,23 @@ import json
 import re
 from datetime import date, datetime, timedelta
 
-from _core import CALENDAR_ID, IL_TZ, ask_ai, calendar, edit, esc, logger, send
+from _core import (CALENDAR_ID, DAYS_HE, IL_TZ, add_items, ask_ai, calendar, edit, esc, item_line, logger,
+                   parse_items, send, undo_button)
 
-DAYS_HE = ["שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "ראשון"]
 TAG = {"yossi": "shift"}  # מסמן משמרות שיוסי הכניס, כדי להחליף אותן כששולחים סידור מתוקן
 
 REGULAR = {"בוקר": ("07:00", "15:00"), "צהריים": ("15:00", "23:00"), "לילה": ("23:00", "07:00")}
 TWELVE = {"בוקר": ("07:00", "19:00"), "לילה": ("19:00", "07:00")}  # יום עם 12/12 באדום
 
-VISION_PROMPT = """This image was sent by Maor. If it is a weekly work schedule (a table of days × shifts × positions,
-with employee names in the cells), find EVERY cell that contains the name "מאור פורמן"
-(also written "פורמן מאור", or partly cut off).
+VISION_PROMPT = """This image was sent by Maor (Israel). Today is {today} (DD/MM/YYYY, {weekday}).
 
+Decide what it is:
+A) "schedule" — a weekly work schedule (a table of days × shifts × positions, with employee names in the cells).
+B) "events" — anything else with something to put in a calendar or to-do list: a WhatsApp/SMS message about an
+   appointment, an invitation, a ticket, a booking confirmation, a reminder, a list of things to do.
+C) "other" — nothing actionable.
+
+For A: find EVERY cell that contains the name "מאור פורמן" (also written "פורמן מאור", or partly cut off).
 For each such cell return:
 - date: the date in that cell's day header, as DD/MM/YYYY
 - shift: that cell's sub-column header — exactly one of "בוקר", "צהריים", "לילה"
@@ -29,7 +34,14 @@ Be very careful to map each cell to the correct day and sub-column: the table is
 three sub-columns (בוקר on the right, צהריים in the middle, לילה on the left). Never guess; if the name is not in the
 table, return an empty list.
 
-Return ONLY JSON: {"is_schedule": true|false, "shifts": [{"date": "...", "shift": "...", "position": "...", "twelve": false}]}"""
+For B: return each item. "event" has a specific time; "task" has none. Resolve relative dates ("מחר", "ביום שלישי")
+against today. title in Hebrew, short and clear, including the place if one is given (e.g. "רופא שיניים — מרפאת הדר").
+Never invent a date or time that is not in the image; if there is no date, use today.
+
+Return ONLY JSON:
+{{"kind": "schedule|events|other",
+  "shifts": [{{"date": "...", "shift": "...", "position": "...", "twelve": false}}],
+  "items": [{{"type": "event|task", "title": "...", "date": "DD/MM/YYYY", "start_time": "HH:MM or null", "end_time": "HH:MM or null"}}]}}"""
 
 # ── שעות ──────────────────────────────────────────────────────────────────────
 
@@ -196,11 +208,18 @@ def to_events(found: list) -> list:
     return sorted(events, key=lambda e: e["start"])
 
 def handle_image(image: bytes) -> None:
-    send("🔍 קורא את הסידור...")
-    result = ask_ai(VISION_PROMPT, image)
+    send("🔍 קורא את התמונה...")
+    today = datetime.now(IL_TZ)
+    result = ask_ai(VISION_PROMPT.format(today=f"{today:%d/%m/%Y}", weekday=DAYS_HE[today.weekday()]), image)
     logger.info("vision: %d bytes → %s", len(image), json.dumps(result, ensure_ascii=False))
-    if not result.get("is_schedule"):
-        send("🤷 זה לא נראה כמו סידור עבודה. כרגע אני יודע לקרוא מתמונות רק סידורי עבודה.")
+    if result.get("kind") == "events":
+        rows = [r for r in map(item_line, result.get("items", [])) if r]
+        if rows:
+            send("📸 <b>מצאתי בתמונה:</b>\n" + esc("\n".join(rows)),
+                 [{"text": "✅ הוסף", "callback_data": "items"}, {"text": "❌ בטל", "callback_data": "cancel"}])
+            return
+    if result.get("kind") != "schedule":
+        send("🤷 לא מצאתי בתמונה סידור עבודה, אירוע או משימה.")
         return
     events = to_events(result.get("shifts", []))
     if not events:
@@ -230,3 +249,9 @@ def approve(message: dict, ws_iso: str) -> None:
     replace_week(ws, events)
     edit(message["message_id"], "\n".join([*[esc(line(e)) for e in events], "",
                                            f"✅ <b>{len(events)} משמרות נכנסו ליומן</b>"]))
+
+def approve_items(message: dict) -> None:
+    """אישור של צילום מסך: הפריטים נקראים מטקסט התצוגה המקדימה."""
+    lines, batch = add_items(parse_items(message.get("text", "")))
+    edit(message["message_id"], "\n".join(lines) or "⚠️ לא הצלחתי לקרוא את הפריטים מההודעה.",
+         undo_button(batch) if batch else None)
