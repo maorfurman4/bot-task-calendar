@@ -24,6 +24,14 @@ jobs:
       - name: Install Vercel CLI
         run: npm i -g vercel@latest
 
+      - name: Clean token
+        # רווח או שורה חדשה שהודבקו עם הטוקן שוברים אותו
+        run: |
+          CLEAN=$(printf '%s' "$VERCEL_TOKEN" | tr -d '[:space:]')
+          echo "::add-mask::$CLEAN"
+          echo "token length: ${#VERCEL_TOKEN} → ${#CLEAN}"
+          echo "VERCEL_TOKEN=$CLEAN" >> "$GITHUB_ENV"
+
       - name: Link project
         run: |
           vercel whoami --token "$VERCEL_TOKEN"
