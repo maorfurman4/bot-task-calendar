@@ -121,6 +121,10 @@ assert not c.matches("מבנה נתונים מלר", "מבנה מחשבים")  #
 # ✅ כל פריט שנוסף — עם יום ותאריך מדויקים
 assert c.day_label("26/10/2026") == "שני 26/10"
 
+# 💰 טקסט והקלטה — מודל זול; תמונה — המודל החזק (קורא טבלאות וצילומי מסך)
+assert c.models_for(image=False) == ["gpt-5-mini", "gpt-4o-mini"]
+assert c.models_for(image=True) == ["gpt-5", "gpt-4o"]
+
 # קובץ תמונה מזוהה גם כשטלגרם שולח mime_type כללי (כך זה הגיע מהמק)
 import webhook  # noqa: E402
 assert webhook.is_image({"mime_type": "application/binary", "file_name": "5a21.JPG"})

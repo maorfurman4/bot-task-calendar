@@ -32,7 +32,12 @@ CHAT_ID = os.environ.get("CHAT_ID", "").strip()
 CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID", "maorfurman123@gmail.com")
 OPENAI_KEY = os.environ.get("OPEN_API_KEY", "").strip()
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
-MODELS = ["gpt-5", "gpt-4o"]  # הראשון שעובד עם המפתח
+# הראשון שעובד עם המפתח. טקסט קצר בעברית — mini מספיק (חמישית מהמחיר); תמונות — המודל החזק
+MODELS_TEXT = ["gpt-5-mini", "gpt-4o-mini"]
+MODELS_IMAGE = ["gpt-5", "gpt-4o"]
+
+def models_for(image: bool) -> list:
+    return MODELS_IMAGE if image else MODELS_TEXT
 
 def esc(text) -> str:
     return html.escape(str(text))
@@ -72,7 +77,7 @@ def ask_ai(prompt: str, image: bytes | None = None) -> dict:
         url = "data:image/jpeg;base64," + base64.b64encode(image).decode()
         content.append({"type": "image_url", "image_url": {"url": url, "detail": "high"}})
     last_error = None
-    for model in MODELS:
+    for model in models_for(bool(image)):
         body = {"model": model, "response_format": {"type": "json_object"},
                 "messages": [{"role": "user", "content": content}]}
         body.update({"reasoning_effort": "low"} if model.startswith("gpt-5") else {"temperature": 0.1})
