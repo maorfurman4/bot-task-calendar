@@ -121,15 +121,21 @@ def tasks():
 PARSE_PROMPT = """You are a Hebrew personal assistant. The user sent you a message in Hebrew.
 Today is {today} (DD/MM/YYYY). Current time (Israel): {time}.
 
-Extract ALL actionable items (tasks and events) from the message.
+Extract ALL actionable items from the message.
 
 Rules:
+- "cancel" = the user asks to cancel / delete / remove something that is ALREADY in his calendar
+  (e.g., "בטל לי את הנדסת חשמל מחר", "תמחק את הפגישה עם דני", "אין לי היום מבנה מחשבים, תוריד").
+  query = only the event's name words, without "בטל/את/לי/מחר" (e.g., "הנדסת חשמל").
+  date = the day he named, or null if he named no day. NEVER turn a cancel request into a task.
+  A to-do about cancelling something outside the calendar ("לבטל את המנוי לנטפליקס") is a task, not cancel.
 - "task" = to-do without a specific hour (e.g., "לקנות חלב") -> date = today unless specified. start_time = null, end_time = null.
 - "event" = has a specific hour (e.g., "אימון ב-6 בבוקר") -> extract date and time. Assume 1 hour duration if no end time.
 - "ignore" = greeting, non-actionable text.
+Resolve relative days ("מחר", "ביום שלישי") against today.
 
-Return ONLY a JSON object: {{"items": [{{"type": "task|event|ignore", "title": "...", "date": "DD/MM/YYYY",
-"start_time": "HH:MM or null", "end_time": "HH:MM or null"}}]}}
+Return ONLY a JSON object: {{"items": [{{"type": "task|event|cancel|ignore", "title": "...", "query": "... (cancel only)",
+"date": "DD/MM/YYYY or null", "start_time": "HH:MM or null", "end_time": "HH:MM or null"}}]}}
 
 Message:
 {message}
@@ -144,6 +150,68 @@ def _parse_date(date_str: str) -> str:
     return f"{'20' + year if len(year) == 2 else year}-{month.zfill(2)}-{day.zfill(2)}"
 
 DAYS_HE = ["שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "ראשון"]
+
+def day_label(date_str: str) -> str:
+    day = datetime.strptime(_parse_date(date_str), "%Y-%m-%d")
+    return f"{DAYS_HE[day.weekday()]} {day:%d/%m}"
+
+# ── 🗑️ מחיקה מהיומן: "בטל לי את הנדסת חשמל מחר" ─────────────────────────────
+
+def matches(query: str, summary: str) -> bool:
+    words = [w for w in re.findall(r"\w+", (query or "").lower()) if len(w) > 1]
+    return bool(words) and all(w in (summary or "").lower() for w in words)
+
+def event_line(ev: dict) -> str:
+    when = "כל היום" if ev["end"] is None else f"{ev['start']:%H:%M}–{ev['end']:%H:%M}"
+    return f"🗑️ {DAYS_HE[ev['start'].weekday()]} {ev['start']:%d/%m} · {when} · {ev['summary']}"
+
+def delete_buttons(found: list) -> list:
+    # shortcut: מזהה אירוע ארוך מ-60 תווים לא נכנס לכפתור טלגרם (64 בתים) — האירוע מוצג בלי כפתור
+    return [{"text": "🗑️ מחק מהיומן" if len(found) == 1 else f"🗑️ {ev['start']:%d/%m %H:%M}",
+             "callback_data": f"del:{ev['id']}"} for ev in found if len(f"del:{ev['id']}".encode()) <= 64]
+
+def _event(it: dict) -> dict:
+    s, e = it.get("start", {}), it.get("end", {})
+    if "dateTime" in s:
+        return {"id": it["id"], "summary": it.get("summary", "(ללא שם)"),
+                "start": datetime.fromisoformat(s["dateTime"]).astimezone(IL_TZ),
+                "end": datetime.fromisoformat(e["dateTime"]).astimezone(IL_TZ)}
+    return {"id": it["id"], "summary": it.get("summary", "(ללא שם)"),
+            "start": datetime.fromisoformat(s["date"]).replace(tzinfo=IL_TZ), "end": None}
+
+def find_events(query: str, date_str) -> list:
+    """היום שנבחר, או השבועיים הקרובים אם לא נאמר יום. רק היומן הראשי."""
+    if date_str:
+        start = datetime.strptime(_parse_date(date_str), "%Y-%m-%d").replace(tzinfo=IL_TZ)
+        end = start + timedelta(days=1)
+    else:
+        start = datetime.now(IL_TZ)
+        end = start + timedelta(days=14)
+    items = calendar().events().list(calendarId=CALENDAR_ID, timeMin=start.isoformat(), timeMax=end.isoformat(),
+                                     singleEvents=True, orderBy="startTime", maxResults=250).execute().get("items", [])
+    return [_event(it) for it in items if matches(query, it.get("summary", ""))][:5]
+
+def ask_cancel(item: dict) -> None:
+    query, date_str = item.get("query") or item.get("title", ""), item.get("date")
+    found = find_events(query, date_str)
+    if not found:
+        where = f"ב{day_label(date_str)}" if date_str else "בשבועיים הקרובים"
+        send(f"🤷 לא מצאתי ביומן \"{esc(query)}\" {where}. לא מחקתי ולא הוספתי כלום.")
+        return
+    send("🗑️ <b>למחוק מהיומן?</b>\n" + esc("\n".join(event_line(ev) for ev in found)),
+         delete_buttons(found) + [{"text": "❌ בטל", "callback_data": "cancel"}])
+
+def delete_event(message: dict, event_id: str) -> None:
+    service = calendar()
+    try:
+        line = event_line(_event(service.events().get(calendarId=CALENDAR_ID, eventId=event_id).execute()))
+        service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
+        edit(message["message_id"], f"🗑️ <b>נמחק מהיומן:</b>\n{esc(line)}")
+    except Exception as ex:
+        if "404" in str(ex) or "410" in str(ex):
+            edit(message["message_id"], "🤷 האירוע כבר לא ביומן.")
+        else:
+            raise
 
 # ── ביטול: כל פעולה מקבלת מזהה קצר שנשמר על האירועים/משימות ונכנס לכפתור ↩️ ─────
 
@@ -191,7 +259,7 @@ def add_calendar_event(parsed: dict, batch: str) -> str:
         "reminders": {"useDefault": False, "overrides": [{"method": "popup", "minutes": 30}]},
         "extendedProperties": {"private": {"yossi_batch": batch}},
     }).execute()
-    return f"{start_dt:%d/%m} {start_time}–{end_dt:%H:%M}"
+    return f"{DAYS_HE[start_dt.weekday()]} {start_dt:%d/%m} {start_time}–{end_dt:%H:%M}"
 
 def add_task(parsed: dict, batch: str) -> None:
     date_iso = _parse_date(parsed.get("date", ""))
@@ -214,7 +282,7 @@ def add_items(items: list) -> tuple:
         try:
             if kind == "task":
                 add_task(parsed, batch)
-                added.append(f"✅ {esc(title)}")
+                added.append(f"✅ {esc(title)} — {day_label(parsed.get('date', ''))}")
             else:
                 added.append(f"📅 {esc(title)} — {add_calendar_event(parsed, batch)}")
         except Exception as ex:
@@ -225,14 +293,23 @@ def add_items(items: list) -> tuple:
         lines += ["", "⚠️ <b>נכשל:</b>", *failed]
     return lines, batch if added else None
 
+def preview_items(items: list, header: str) -> bool:
+    """מציג בדיוק מה ייכנס (יום, תאריך, שעה) — נכנס רק אחרי ✅. הטקסט עצמו הוא המקור להוספה."""
+    rows = [r for r in map(item_line, items) if r]
+    if rows:
+        send(f"{header}\n" + esc("\n".join(rows)),
+             [{"text": "✅ הוסף", "callback_data": "items"}, {"text": "❌ בטל", "callback_data": "cancel"}])
+    return bool(rows)
+
 def handle_text(text: str) -> None:
     now = datetime.now(IL_TZ)
     items = ask_ai(PARSE_PROMPT.format(today=f"{now:%d/%m/%Y}", time=f"{now:%H:%M}", message=text)).get("items", [])
-    lines, batch = add_items(items)
-    if not lines:
-        send("🤷 לא מצאתי בהודעה משימה או אירוע להוסיף.")
-        return
-    send("\n".join(lines), undo_button(batch) if batch else None)
+    cancels = [i for i in items if i.get("type") == "cancel"]
+    for item in cancels:
+        ask_cancel(item)
+    adds = [i for i in items if i.get("type") in ("task", "event")]
+    if not preview_items(adds, "📝 <b>זה מה שאכניס — לאשר?</b>") and not cancels:
+        send("🤷 לא מצאתי בהודעה משימה, אירוע או משהו לבטל.")
 
 # ── תצוגה מקדימה לאישור (צילומי מסך) — הטקסט שלה הוא גם המקור להוספה ─────────
 

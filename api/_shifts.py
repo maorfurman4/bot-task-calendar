@@ -7,8 +7,8 @@ import json
 import re
 from datetime import date, datetime, timedelta
 
-from _core import (CALENDAR_ID, DAYS_HE, IL_TZ, add_items, ask_ai, calendar, edit, esc, item_line, logger,
-                   parse_items, send, undo_button)
+from _core import (CALENDAR_ID, DAYS_HE, IL_TZ, add_items, ask_ai, calendar, edit, esc, logger,
+                   parse_items, preview_items, send, undo_button)
 
 TAG = {"yossi": "shift"}  # מסמן משמרות שיוסי הכניס, כדי להחליף אותן כששולחים סידור מתוקן
 
@@ -213,10 +213,7 @@ def handle_image(image: bytes) -> None:
     result = ask_ai(VISION_PROMPT.format(today=f"{today:%d/%m/%Y}", weekday=DAYS_HE[today.weekday()]), image)
     logger.info("vision: %d bytes → %s", len(image), json.dumps(result, ensure_ascii=False))
     if result.get("kind") == "events":
-        rows = [r for r in map(item_line, result.get("items", [])) if r]
-        if rows:
-            send("📸 <b>מצאתי בתמונה:</b>\n" + esc("\n".join(rows)),
-                 [{"text": "✅ הוסף", "callback_data": "items"}, {"text": "❌ בטל", "callback_data": "cancel"}])
+        if preview_items(result.get("items", []), "📸 <b>מצאתי בתמונה:</b>"):
             return
     if result.get("kind") != "schedule":
         send("🤷 לא מצאתי בתמונה סידור עבודה, אירוע או משימה.")

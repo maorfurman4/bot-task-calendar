@@ -10,7 +10,8 @@ import _core  # noqa: E402
 import _shifts  # noqa: E402
 
 HELP = ("👋 אני יוסי.\n"
-        "• כתוב או הקלט לי משימה או אירוע, למשל: \"לקנות חלב, אימון מחר ב-6\"\n"
+        "• כתוב או הקלט לי משימה או אירוע, למשל: \"לקנות חלב, אימון מחר ב-6\" — אציג תאריך מדויק ותאשר\n"
+        "• לביטול מהיומן: \"בטל לי את הנדסת חשמל מחר\" — אמצא את האירוע ואמחק אחרי אישור\n"
         "• שלח צילום מסך של הזמנה, תור או כרטיס — אציג מה מצאתי ואוסיף אחרי אישור\n"
         "• שלח תמונה של סידור עבודה (עדיף כקובץ) — אמצא את המשמרות שלך ואכניס ליומן אחרי אישור\n"
         "• או כתוב משמרות בקיצור: \"משמרת צהריים בראשון שלישי וחמישי, שבת לילה רמש\"\n"
@@ -32,6 +33,8 @@ def dispatch(update: dict) -> None:
             _shifts.approve(message, data.split(":", 1)[1])
         elif data == "items":
             _shifts.approve_items(message)
+        elif data.startswith("del:"):
+            _core.delete_event(message, data.split(":", 1)[1])
         elif data.startswith("undo:"):
             removed = _core.undo(data.split(":", 1)[1])
             _core.edit(message["message_id"], f"↩️ בוטל — הוסרו {removed} פריטים מהיומן ומהמשימות.")

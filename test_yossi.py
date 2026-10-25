@@ -92,6 +92,25 @@ b = c.new_batch()
 assert len(f"undo:{b}".encode()) <= 64 and c.is_marked({"notes": f"נוסף ע\"י יוסי · {c.marker(b)}"}, b)
 assert not c.is_marked({"notes": "x"}, b) and not c.is_marked({}, b)
 
+# 🗑️ "בטל לי את הנדסת חשמל מחר" → חיפוש ביומן, לא משימה
+assert c.matches("הנדסת חשמל", "הנדסת חשמל ב' (הרצאה) - גבי שפט")
+assert c.matches("הרצאה הנדסת חשמל", "📚 הנדסת חשמל ב' (הרצאה)")  # כל המילים, בכל סדר
+assert not c.matches("הנדסת חשמל", "מבנה מחשבים (הרצאה)")
+assert not c.matches("", "הנדסת חשמל")
+from datetime import datetime as _dt  # noqa: E402
+timed = {"id": "abc", "summary": "הנדסת חשמל ב' (הרצאה)",
+         "start": _dt(2026, 10, 26, 11, 0, tzinfo=c.IL_TZ), "end": _dt(2026, 10, 26, 14, 0, tzinfo=c.IL_TZ)}
+allday = {"id": "def", "summary": "יום ספורט", "start": _dt(2026, 10, 27, tzinfo=c.IL_TZ), "end": None}
+assert c.event_line(timed) == "🗑️ שני 26/10 · 11:00–14:00 · הנדסת חשמל ב' (הרצאה)"
+assert c.event_line(allday) == "🗑️ שלישי 27/10 · כל היום · יום ספורט"
+long_id = {**timed, "id": "x" * 70}  # מזהה ארוך מדי לכפתור טלגרם (64 בתים) — בלי כפתור, לא קריסה
+assert [b["callback_data"] for b in c.delete_buttons([timed])] == ["del:abc"]
+assert [b["callback_data"] for b in c.delete_buttons([timed, allday])] == ["del:abc", "del:def"]
+assert c.delete_buttons([long_id]) == []
+
+# ✅ כל פריט שנוסף — עם יום ותאריך מדויקים
+assert c.day_label("26/10/2026") == "שני 26/10"
+
 # קובץ תמונה מזוהה גם כשטלגרם שולח mime_type כללי (כך זה הגיע מהמק)
 import webhook  # noqa: E402
 assert webhook.is_image({"mime_type": "application/binary", "file_name": "5a21.JPG"})
