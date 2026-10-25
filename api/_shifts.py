@@ -8,7 +8,7 @@ import re
 from datetime import date, datetime, timedelta
 
 from _core import (CALENDAR_ID, DAYS_HE, IL_TZ, add_items, ask_ai, calendar, edit, esc, logger,
-                   parse_items, preview_items, send, undo_button)
+                   parse_items, preview_items, send, span, undo_button, unspan)
 
 TAG = {"yossi": "shift"}  # מסמן משמרות שיוסי הכניס, כדי להחליף אותן כששולחים סידור מתוקן
 
@@ -72,14 +72,14 @@ def week_start(day: date) -> date:
 # ── תצוגה מקדימה — הטקסט שלה הוא גם המקור לאישור (בלי לשמור מצב בשרת) ─────────
 
 def line(ev: dict) -> str:
-    return f"🛡️ {DAYS_HE[ev['start'].weekday()]} {ev['start']:%d/%m} · {ev['shift']} · " \
-           f"{ev['start']:%H:%M}–{ev['end']:%H:%M} · {ev['position']}"
+    hours = span(ev["start"].strftime("%H:%M"), ev["end"].strftime("%H:%M"))
+    return f"🛡️ {DAYS_HE[ev['start'].weekday()]} {ev['start']:%d/%m} · {ev['shift']} · {hours} · {ev['position']}"
 
 LINE_RE = re.compile(r"(\d{2})/(\d{2}) · (.+?) · (\d{2}:\d{2})–(\d{2}:\d{2}) · (.+)$")
 
 def parse_preview(text: str, ws: date) -> list:
     events = []
-    for row in text.splitlines():
+    for row in unspan(text).splitlines():
         m = LINE_RE.search(row)
         if not row.startswith("🛡") or not m:
             continue
@@ -145,8 +145,9 @@ def conflicts(events: list) -> list:
                 continue  # אירוע של כל היום או משמרת קודמת שתוחלף
             s = datetime.fromisoformat(it["start"]["dateTime"]).astimezone(IL_TZ)
             e = datetime.fromisoformat(it["end"]["dateTime"]).astimezone(IL_TZ)
-            out.append(f"• {DAYS_HE[ev['start'].weekday()]} {ev['start']:%d/%m} ({ev['start']:%H:%M}–{ev['end']:%H:%M}) "
-                       f"מתנגש עם: {esc(it.get('summary', '(ללא שם)'))} {s:%H:%M}–{e:%H:%M}")
+            mine = span(ev["start"].strftime("%H:%M"), ev["end"].strftime("%H:%M"))
+            out.append(f"• {DAYS_HE[ev['start'].weekday()]} {ev['start']:%d/%m} ({mine}) "
+                       f"מתנגש עם: {esc(it.get('summary', '(ללא שם)'))} {span(f'{s:%H:%M}', f'{e:%H:%M}')}")
     return out
 
 def replace_week(ws: date, events: list) -> None:

@@ -6,6 +6,7 @@
 """
 
 import base64
+import difflib
 import hashlib
 import html
 import json
@@ -133,6 +134,8 @@ Rules:
 - "event" = has a specific hour (e.g., "אימון ב-6 בבוקר") -> extract date and time. Assume 1 hour duration if no end time.
 - "ignore" = greeting, non-actionable text.
 Resolve relative days ("מחר", "ביום שלישי") against today.
+The user types fast on a phone and makes typos ("מלר" = "מחר", "מחשביים" = "מחשבים", "שליש" = "שלישי") —
+understand the intended words, and write title/query with the correct spelling.
 
 Return ONLY a JSON object: {{"items": [{{"type": "task|event|cancel|ignore", "title": "...", "query": "... (cancel only)",
 "date": "DD/MM/YYYY or null", "start_time": "HH:MM or null", "end_time": "HH:MM or null"}}]}}
@@ -151,6 +154,15 @@ def _parse_date(date_str: str) -> str:
 
 DAYS_HE = ["שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "ראשון"]
 
+LRI, PDI = "\u2066", "\u2069"
+
+def span(start: str, end: str) -> str:
+    # בשורה בעברית טלגרם הופך "08:00–10:00" ל-"10:00–08:00"; בידוד משמאל-לימין שומר על הסדר
+    return f"{LRI}{start}–{end}{PDI}"
+
+def unspan(text: str) -> str:
+    return text.replace(LRI, "").replace(PDI, "")
+
 def day_label(date_str: str) -> str:
     day = datetime.strptime(_parse_date(date_str), "%Y-%m-%d")
     return f"{DAYS_HE[day.weekday()]} {day:%d/%m}"
@@ -158,11 +170,14 @@ def day_label(date_str: str) -> str:
 # ── 🗑️ מחיקה מהיומן: "בטל לי את הנדסת חשמל מחר" ─────────────────────────────
 
 def matches(query: str, summary: str) -> bool:
+    """כל המילים מופיעות (או מילה קרובה — "מחשביים"); בשאילתה של 3+ מילים מותר שאחת לא תתאים ("מלר")."""
     words = [w for w in re.findall(r"\w+", (query or "").lower()) if len(w) > 1]
-    return bool(words) and all(w in (summary or "").lower() for w in words)
+    text = (summary or "").lower()
+    found = sum(1 for w in words if w in text or difflib.get_close_matches(w, re.findall(r"\w+", text), n=1, cutoff=0.8))
+    return bool(words) and found >= (len(words) - 1 if len(words) >= 3 else len(words))
 
 def event_line(ev: dict) -> str:
-    when = "כל היום" if ev["end"] is None else f"{ev['start']:%H:%M}–{ev['end']:%H:%M}"
+    when = "כל היום" if ev["end"] is None else span(f"{ev['start']:%H:%M}", f"{ev['end']:%H:%M}")
     return f"🗑️ {DAYS_HE[ev['start'].weekday()]} {ev['start']:%d/%m} · {when} · {ev['summary']}"
 
 def delete_buttons(found: list) -> list:
@@ -259,7 +274,7 @@ def add_calendar_event(parsed: dict, batch: str) -> str:
         "reminders": {"useDefault": False, "overrides": [{"method": "popup", "minutes": 30}]},
         "extendedProperties": {"private": {"yossi_batch": batch}},
     }).execute()
-    return f"{DAYS_HE[start_dt.weekday()]} {start_dt:%d/%m} {start_time}–{end_dt:%H:%M}"
+    return f"{DAYS_HE[start_dt.weekday()]} {start_dt:%d/%m} {span(start_time, f'{end_dt:%H:%M}')}"
 
 def add_task(parsed: dict, batch: str) -> None:
     date_iso = _parse_date(parsed.get("date", ""))
@@ -323,14 +338,14 @@ def item_line(item: dict) -> str:
     if item.get("type") == "event" and item.get("start_time"):
         start = datetime.strptime(item["start_time"], "%H:%M")
         end = item.get("end_time") or f"{start + timedelta(hours=1):%H:%M}"
-        return f"📅 {head} · {item['start_time']}–{end} · {title}"
+        return f"📅 {head} · {span(item['start_time'], end)} · {title}"
     return f"📌 {head} · {title}"
 
 ITEM_RE = re.compile(r"(📅|📌) \S+ (\d{2}/\d{2}/\d{4}) · (?:(\d{2}:\d{2})–(\d{2}:\d{2}) · )?(.+)$")
 
 def parse_items(text: str) -> list:
     out = []
-    for row in text.splitlines():
+    for row in unspan(text).splitlines():
         m = ITEM_RE.match(row.strip())
         if m:
             icon, day, start, end, title = m.groups()
