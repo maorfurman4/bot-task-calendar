@@ -169,17 +169,17 @@ SHIFT_WORDS = {"בוקר": "בוקר", "צהריים": "צהריים", "צהרי
 DAY_RE = re.compile(r"^(?:ו?ב?|ב?ו?)(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)$")
 
 def parse_shortcut(text: str, today: date) -> list:
-    """רק הודעה עם "משמרת"; כל פסקה (מופרדת בפסיק/נקודה/שורה): ימים + סוג משמרת + רמ"ש/12 אופציונלי."""
+    """רק הודעה עם "משמרת"; כל פסקה (מופרדת בפסיק/נקודה/שורה): ימים + סוג משמרת + רמ"ש/12/כפולה אופציונלי."""
     if "משמר" not in text:
         return []
     ws = week_start(today)
     if "שבוע הבא" in text or ("השבוע" not in text and today != ws):
         ws += timedelta(days=7)  # ברירת מחדל: סידור לשבוע הבא, אלא אם היום ראשון
-    events = []
+    events, carry = [], None  # carry: "משמרת צהריים:" בשורה בלי ימים — חל על השורות שאחריה
     for clause in re.split(r"[,.\n;]", text):
         flat = re.sub(r"[\"״׳']", "", clause)
         position = 'רמ"ש' if "רמש" in flat else "רגילה"
-        twelve = bool(re.search(r"(?<!\d)12(?!\d)", clause))
+        twelve = bool(re.search(r"(?<!\d)12(?!\d)", clause)) or "כפול" in clause
         days, shift, pairs = [], None, []
         for word in re.findall(r"[\w\"״׳']+", clause):
             day = DAY_RE.match(word.strip("\"'"))
@@ -189,7 +189,9 @@ def parse_shortcut(text: str, today: date) -> list:
                 shift = SHIFT_WORDS[sw]  # "בוקר" עצמו מתחיל ב-ב, לכן לא lstrip
                 pairs += [(d, shift) for d in days]
                 days = []
-        pairs += [(d, shift) for d in days if shift]  # "משמרת צהריים בשני" — הסוג לפני הימים
+        pairs += [(d, shift or carry) for d in days if shift or carry]  # "משמרת צהריים בשני" — הסוג לפני הימים
+        if shift and not pairs:
+            carry = shift
         for weekday, sh in pairs:
             day = ws + timedelta(days=(weekday + 1) % 7)  # weekday 0=שני → ראשון הוא 0 בשבוע
             start, end = shift_hours(position, sh, twelve)
