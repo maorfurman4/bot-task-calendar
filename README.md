@@ -41,7 +41,13 @@
 | `pyproject.toml` | ספריות + הגדרת Vercel |
 | `.github/workflows/deploy.yml` | מעתיק סודות ל-Vercel, מעלה ומחבר את טלגרם (הרצה ידנית) |
 
+## ⏰ שעון מעורר לבריף החדשות
+`vercel.json` מגדיר Vercel Cron שקורא כל בוקר ל-`/api/news_cron` ב-04:00–04:59 UTC (06:00–06:59 חורף / 07:00–07:59 קיץ),
+וזה מפעיל את ה-workflow של bot-morning-news. ה-schedule של GitHub עצמו מאחר ב-3–6 שעות (נמדד 10/2026).
+הבקשה מאומתת ב-`CRON_SECRET` (Vercel שולח אותו לבד); אם GitHub מסרב — הודעה בטלגרם.
+
 ## סודות (Settings → Secrets → Actions)
-`VERCEL_TOKEN`, `TELEGRAM_TOKEN`, `CHAT_ID`, `OPEN_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_TASKS_CREDENTIALS`
+`VERCEL_TOKEN`, `TELEGRAM_TOKEN`, `CHAT_ID`, `OPEN_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_TASKS_CREDENTIALS`,
+`CRON_SECRET`, `NEWS_DISPATCH_TOKEN` (טוקן GitHub עם Actions: write על bot-morning-news בלבד)
 
 כל push ל-main מעלה גרסה חדשה ל-Vercel אוטומטית. אחרי שינוי סוד — להריץ שוב את `deploy.yml`.

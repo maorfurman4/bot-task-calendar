@@ -18,6 +18,8 @@ jobs:
       OPEN_API_KEY: ${{ secrets.OPEN_API_KEY }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       GOOGLE_TASKS_CREDENTIALS: ${{ secrets.GOOGLE_TASKS_CREDENTIALS }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      NEWS_DISPATCH_TOKEN: ${{ secrets.NEWS_DISPATCH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +44,8 @@ jobs:
           import json, os, urllib.request
           url = (f"https://api.vercel.com/v10/projects/{os.environ['VERCEL_PROJECT_ID']}/env"
                  f"?upsert=true&teamId={os.environ['VERCEL_ORG_ID']}")
-          for name in ["TELEGRAM_TOKEN", "CHAT_ID", "OPEN_API_KEY", "GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_TASKS_CREDENTIALS"]:
+          for name in ["TELEGRAM_TOKEN", "CHAT_ID", "OPEN_API_KEY", "GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_TASKS_CREDENTIALS",
+                       "CRON_SECRET", "NEWS_DISPATCH_TOKEN"]:
               body = {"key": name, "value": os.environ[name], "type": "encrypted", "target": ["production"]}
               req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST", headers={
                   "Authorization": f"Bearer {os.environ['VERCEL_TOKEN']}", "Content-Type": "application/json"})

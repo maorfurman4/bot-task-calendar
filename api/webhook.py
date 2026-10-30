@@ -4,6 +4,8 @@ import json
 import os
 import sys
 
+import requests
+
 sys.path.insert(0, os.path.dirname(__file__))
 
 import _core  # noqa: E402
@@ -21,6 +23,20 @@ def is_image(doc: dict) -> bool:
     # טלגרם במק שולח קובץ JPG עם mime_type "application/binary", לכן גם לפי הסיומת
     name = (doc.get("file_name") or "").lower()
     return (doc.get("mime_type") or "").startswith("image/") or name.endswith((".jpg", ".jpeg", ".png", ".webp"))
+
+NEWS_WORKFLOW = "https://api.github.com/repos/maorfurman4/bot-morning-news/actions/workflows/main.yml/dispatches"
+
+def news_cron(auth: str) -> str:
+    """Vercel Cron (vercel.json) מפעיל כל בוקר את בריף החדשות — ה-schedule של GitHub מאחר ב-3–6 שעות."""
+    secret = os.environ.get("CRON_SECRET", "")
+    if not secret or auth != f"Bearer {secret}":
+        return "403 Forbidden"
+    resp = requests.post(NEWS_WORKFLOW, json={"ref": "main"}, timeout=15, headers={
+        "Authorization": f"Bearer {os.environ.get('NEWS_DISPATCH_TOKEN', '')}", "Accept": "application/vnd.github+json"})
+    if resp.status_code != 204:
+        _core.send(f"⚠️ לא הצלחתי להפעיל את בריף החדשות: GitHub {resp.status_code} {_core.esc(resp.text[:150])}")
+        return "502 Bad Gateway"
+    return "200 OK"
 
 def dispatch(update: dict) -> None:
     if cq := update.get("callback_query"):
@@ -71,6 +87,8 @@ def app(environ, start_response):
         start_response(status, [("Content-Type", "text/plain; charset=utf-8")])
         return [body]
 
+    if environ.get("PATH_INFO") == "/api/news_cron":
+        return reply(news_cron(environ.get("HTTP_AUTHORIZATION", "")))
     if environ.get("REQUEST_METHOD") != "POST":
         return reply("200 OK", "Yossi is alive".encode())
     if environ.get("HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN") != _core.webhook_secret():

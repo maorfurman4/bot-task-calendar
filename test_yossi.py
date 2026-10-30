@@ -139,4 +139,8 @@ assert webhook.is_image({"mime_type": "application/binary", "file_name": "5a21.J
 assert webhook.is_image({"mime_type": "image/png", "file_name": "x"})
 assert not webhook.is_image({"mime_type": "application/pdf", "file_name": "a.pdf"})
 
+# ⏰ news_cron: בלי הסוד של Vercel Cron — לא מפעיל כלום
+os.environ["CRON_SECRET"] = "s3cret"
+assert webhook.news_cron("") == "403 Forbidden" and webhook.news_cron("Bearer wrong") == "403 Forbidden"
+
 print("ok")
